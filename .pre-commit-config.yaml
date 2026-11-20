@@ -1,0 +1,139 @@
+---
+# Єдина точка конфігурації форматування/лінту — окремих .prettierrc/.yamllint/.markdownlint немає,
+# усі налаштування задані inline через args цих хуків.
+#
+#   Java    -> Spotless + google-java-format (Google Style)
+#   pom.xml -> Spotless sortPom
+#   YAML    -> Prettier (формат) + yamllint (лінт)
+#   MD/JSON -> Prettier (формат) + markdownlint (лінт + автофікс)
+#   SQL     -> перевірка, що міграції Flyway названі за схемою V<версія>__<опис>.sql
+#   секрети -> gitleaks + detect-private-key (паролі БД ніколи не в git)
+#
+# Install:  pre-commit install --install-hooks
+# Run all:  pre-commit run --all-files
+minimum_pre_commit_version: "4.0.0"
+
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+
+default_stages:
+  - pre-commit
+
+exclude: |
+  (?x)^(
+    mvnw|
+    mvnw\.cmd|
+    \.mvn/.*|
+    target/.*
+  )$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+      - id: check-json
+      - id: check-xml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-executables-have-shebangs
+      - id: forbid-submodules
+      - id: detect-private-key
+
+  # Форматер YAML / Markdown / JSON. Налаштування — прапорцями, без .prettierrc.
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.9.6
+    hooks:
+      - id: prettier
+        types_or: [yaml, markdown, json]
+        args:
+          - --no-config
+          - --no-editorconfig
+          - --print-width=100
+          - --tab-width=2
+          - --no-use-tabs
+          - --end-of-line=lf
+          - --prose-wrap=preserve
+
+  # Лінт YAML (після Prettier, тож бачить уже відформатований файл).
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        args:
+          - --strict
+          - --no-warnings
+          - -d
+          - |
+            extends: default
+            rules:
+              # довжину рядків тримає Prettier
+              line-length: disable
+              # у Spring-конфігах "---" на початку не заведено
+              document-start: disable
+              comments:
+                min-spaces-from-content: 1
+              truthy:
+                check-keys: false
+              indentation:
+                spaces: 2
+                indent-sequences: true
+
+  # Лінт + автофікс Markdown. --disable замість .markdownlint.yaml.
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.49.1
+    hooks:
+      - id: markdownlint-fix
+        args:
+          # MD013 line-length та MD024 duplicate-heading — конфліктують з Prettier/структурою доків,
+          # MD033 inline-HTML і MD041 first-line-heading — свідомо дозволені.
+          - --disable
+          - MD013
+          - MD024
+          - MD033
+          - MD041
+          - --
+
+  # Java + pom.xml через Maven wrapper (google-java-format задано в pom.xml -> spotless).
+  - repo: local
+    hooks:
+      - id: spotless-apply
+        name: spotless (google-java-format + sortPom)
+        entry: ./mvnw --batch-mode --quiet spotless:apply
+        language: system
+        pass_filenames: false
+        files: (\.java|pom\.xml)$
+
+      # Flyway мовчки ігнорує файл із неправильним іменем — краще спіймати це до коміту,
+      # ніж дивуватись, чому міграція «не накотилась».
+      - id: flyway-naming
+        name: flyway migration naming (V<версія>__<опис>.sql)
+        entry: >-
+          bash -c 'fail=0; for f in "$@"; do
+          case "$(basename "$f")" in
+          V[0-9]*__*.sql|R__*.sql|U[0-9]*__*.sql) ;;
+          *) echo "Невірне ім’я міграції: $f"; fail=1 ;;
+          esac; done; exit $fail' --
+        language: system
+        files: ^src/main/resources/db/.*\.sql$
+
+  # Сканер секретів: тримає паролі БД поза git.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # Conventional Commits для повідомлення коміту.
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
