@@ -3,6 +3,7 @@ package com.ua.gamestore.service.mapper;
 import com.ua.gamestore.domain.Game;
 import com.ua.gamestore.web.dto.GameCardDto;
 import com.ua.gamestore.web.dto.GameDetailDto;
+import com.ua.gamestore.web.dto.GameRequest;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -24,5 +25,18 @@ public class GameMapper {
         game.getPrice(),
         game.getCoverUrl(),
         game.getDescription());
+  }
+
+  public Game toDomain(GameRequest request) {
+    return new Game(
+        null,
+        request.title(),
+        request.developer(),
+        request.platform(),
+        request.genre(),
+        request.releaseYear(),
+        request.price(),
+        request.coverUrl(),
+        request.description());
   }
 }
